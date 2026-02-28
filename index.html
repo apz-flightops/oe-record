@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!-- 확대/축소가 가능하도록 viewport 설정 변경 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTD TRAINING RECORD</title>
+    
+    <!-- PWA 메타 태그 -->
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Excel 저장을 위한 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            padding: 1rem;
+            color: #000;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 인쇄 설정 최적화 */
+        @media print {
+            body { background-color: white; padding: 0; margin: 0; }
+            .no-print { display: none !important; }
+            .container { 
+                box-shadow: none !important; 
+                border: none !important; 
+                width: 100% !important; 
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 5mm 10mm !important; 
+            }
+            .form-container {
+                border: none !important;
+                padding: 0 !important;
+                max-width: 100% !important;
+            }
+            @page {
+                size: A4 portrait;
+                margin: 10mm 15mm;
+            }
+            textarea { display: none !important; }
+            .print-mirror {
+                display: block !important;
+                white-space: pre-wrap !important;
+                word-break: break-word !important;
+                font-size: 14px !important;
+                font-weight: bold !important;
+                width: 100% !important;
+                padding: 4px !important;
+                min-height: 1.2em !important;
+            }
+        }
+
+        .form-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border: 2px solid #000;
+        }
+
+        input, select, textarea { font-size: 16px !important; }
+
+        .line-input {
+            border: none;
+            border-bottom: 1.5px solid black;
+            outline: none;
+            padding: 0 4px 2px 4px;
+            background: transparent;
+            min-width: 0;
+            flex: 1 1 0%;
+        }
+
+        .table-border, .table-border th, .table-border td {
+            border: 1.5px solid black;
+            border-collapse: collapse;
+        }
+
+        .label-text {
+            font-size: 14px; 
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        textarea {
+            border: none;
+            outline: none;
+            width: 100%;
+            resize: none;
+            font-size: 14px;
+            line-height: 1.3;
+        }
+
+        .signature-wrapper {
+            position: relative;
+            flex: 1 1 0%;
+            height: 45px;
+            border-bottom: 1.5px solid black;
+        }
+        #signature-canvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .no-select-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .transparent-select {
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0; 
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .display-val { font-weight: bold; font-size: 14px; }
+        .display-val.phase-val { font-size: 11px; text-align: center; }
+        
+        .toast {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            padding: 14px 28px; border-radius: 8px; color: white;
+            z-index: 9999; opacity: 0; transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        .print-mirror { display: none; }
+        .clear-sig { position: absolute; right: 0; top: -18px; font-size: 10px; color: #999; cursor: pointer; }
+
+        /* 모달 스타일 */
+        #custom-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+        #custom-modal.active { display: flex; }
+    </style>
+</head>
+<body>
+    <!-- 토스트 메시지 -->
+    <div id="toast" class="toast bg-black"></div>
+
+    <!-- 커스텀 초기화 확인 모달 -->
+    <div id="custom-modal">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border-2 border-black">
+            <div class="text-lg font-bold mb-4">데이터 초기화</div>
+            <p class="text-sm text-gray-600 mb-6">입력된 모든 내용을 삭제하고 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-4 py-2 text-sm font-bold border border-gray-300 rounded">취소</button>
+                <button onclick="confirmReset()" class="px-4 py-2 text-sm font-bold bg-red-600 text-white rounded">초기화 진행</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-container container">
+        <!-- Header -->
+        <div class="flex flex-col items-center mb-8">
+            <div class="text-3xl font-black uppercase tracking-tight">FTD TRAINING RECORD</div>
+        </div>
+
+        <!-- Trainee Info Section -->
+        <div class="grid grid-cols-12 gap-x-4 gap-y-4 mb-6 items-end">
+            <div class="col-span-4 flex items-end">
+                <span class="label-text mr-2">NAME :</span>
+                <input type="text" id="traineeName" class="line-input font-bold text-lg">
+            </div>
+            <div class="col-span-4 flex items-end">
+                <span class="label-text mr-2">EMP NO:</span>
+                <input type="text" id="traineeEmpNo" class="line-input font-bold text-center text-lg">
+            </div>
+            <div class="col-span-4 flex items-end">
+                <span class="label-text mr-2">DATE:</span>
+                <input type="date" id="trainingDate" class="line-input font-bold">
+            </div>
+
+            <div class="col-span-12 grid grid-cols-12 gap-4 border-t border-black pt-4">
+                <div class="col-span-3 flex flex-col gap-1">
+                    <span class="label-text text-[10px] text-gray-500 uppercase">Position</span>
+                    <div class="flex gap-4 items-center h-8">
+                        <label class="flex items-center text-sm font-bold"><input type="radio" name="position" value="CAPT" class="mr-1"> CAPT</label>
+                        <label class="flex items-center text-sm font-bold"><input type="radio" name="position" value="F/O" class="mr-1"> F/O</label>
+                    </div>
+                </div>
+                <div class="col-span-3 flex flex-col gap-1">
+                    <span class="label-text text-[10px] text-gray-500 uppercase">Duty</span>
+                    <div class="flex gap-4 items-center h-8">
+                        <label class="flex items-center text-sm font-bold"><input type="radio" name="duty" value="PF" class="mr-1"> PF</label>
+                        <label class="flex items-center text-sm font-bold"><input type="radio" name="duty" value="PM" class="mr-1"> PM</label>
+                    </div>
+                </div>
+                <div class="col-span-2 flex flex-col gap-1">
+                    <span class="label-text text-[10px] text-gray-500 uppercase">Lesson No.</span>
+                    <input type="text" id="lessonNo" class="line-input font-bold" placeholder="FTD #">
+                </div>
+                <div class="col-span-4 flex flex-col gap-1">
+                    <span class="label-text text-[10px] text-gray-500 uppercase">Course</span>
+                    <select id="courseType" class="line-input font-bold text-sm bg-transparent outline-none">
+                        <option value="">- SELECT -</option>
+                        <option value="Initial">Initial</option>
+                        <option value="Experienced">Experienced</option>
+                        <option value="Upgrade">Upgrade</option>
+                        <option value="Requalification">Requalification</option>
+                        <option value="Others">Others</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flight Phase Reference -->
+        <div class="mb-6">
+            <table class="w-full table-border text-[12px]">
+                <thead>
+                    <tr class="bg-gray-100 font-black text-center">
+                        <th class="w-10 p-1">NO</th>
+                        <th class="p-1 text-left">FLIGHT PHASE</th>
+                        <th class="w-14 p-1">CODE</th>
+                        <th class="p-1 text-left">CORE COMPETENCY</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td class="text-center">1</td><td class="px-1">Preflight</td><td class="text-center font-bold">PRO</td><td class="px-1">Application of Procedures</td></tr>
+                    <tr><td class="text-center">2</td><td class="px-1">Before start</td><td class="text-center font-bold">COM</td><td class="px-1">Communication</td></tr>
+                    <tr><td class="text-center">3</td><td class="px-1">Taxi in & out</td><td class="text-center font-bold">FPA</td><td class="px-1">Flight Path Management - Automation</td></tr>
+                    <tr><td class="text-center">4</td><td class="px-1">Takeoff</td><td class="text-center font-bold">FPM</td><td class="px-1">Flight Path Management - Manual Control</td></tr>
+                    <tr><td class="text-center">5</td><td class="px-1">Departure & Climb</td><td class="text-center font-bold">LTW</td><td class="px-1">Leadership & Teamwork</td></tr>
+                    <tr><td class="text-center">6</td><td class="px-1">Enroute Cruise</td><td class="text-center font-bold">PSD</td><td class="px-1">Problem Solving & Decision Making</td></tr>
+                    <tr><td class="text-center">7</td><td class="px-1">Descent & Arrival</td><td class="text-center font-bold">SAW</td><td class="px-1">Situation Awareness</td></tr>
+                    <tr><td class="text-center">8</td><td class="px-1">Approach</td><td class="text-center font-bold">WLM</td><td class="px-1">Workload Management</td></tr>
+                    <tr><td class="text-center">9</td><td class="px-1">Landing</td><td class="text-center font-bold">KNO</td><td class="px-1">Knowledge</td></tr>
+                    <tr><td class="text-center">10</td><td class="px-1">Others</td><td class="text-center font-bold">MNA</td><td class="px-1">Monitoring & Advice</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Overall Comment -->
+        <div class="mb-6 border-2 border-black">
+            <div class="label-text bg-gray-100 p-1.5 border-b-2 border-black text-center uppercase tracking-widest">OVERALL COMMENT</div>
+            <textarea id="overallComment" class="p-2.5 h-24 font-bold" placeholder="훈련 종합 의견..."></textarea>
+        </div>
+
+        <!-- Detailed Observations -->
+        <div class="mb-4">
+            <table class="w-full table-border text-[14px]">
+                <thead>
+                    <tr class="h-10 bg-gray-100 text-center font-black">
+                        <th class="w-16">NO</th>
+                        <th class="w-24">CODE</th>
+                        <th class="w-24">CODE</th>
+                        <th>COMMENTS (Please describe in detail)</th>
+                    </tr>
+                </thead>
+                <tbody id="detailBody">
+                    <!-- JS 생성 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Instructor Verification -->
+        <div class="grid grid-cols-12 gap-x-4 mb-6 items-end border-t border-black pt-6">
+            <div class="col-span-4 flex items-end">
+                <span class="label-text mr-2">INSTRUCTOR :</span>
+                <input type="text" id="instName" class="line-input font-bold text-lg">
+            </div>
+            <div class="col-span-4 flex items-end">
+                <span class="label-text mr-2">EMP NO:</span>
+                <input type="text" id="instEmpNo" class="line-input font-bold text-center text-lg">
+            </div>
+            <div class="col-span-4 flex items-end relative">
+                <span class="label-text mr-2">SIGNATURE:</span>
+                <div class="signature-wrapper flex-grow">
+                    <div class="clear-sig no-print" onclick="clearSignature()">Clear</div>
+                    <canvas id="signature-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-between items-end text-[11px] font-bold pt-2 border-t-2 border-black mt-4">
+            <div>F-OPFT-002</div>
+            <div>REV.5 (2025/12/24)</div>
+        </div>
+
+        <!-- Webhook Settings (no-print) -->
+        <div class="mt-8 p-4 bg-blue-50 border border-blue-200 rounded no-print">
+            <div class="text-[10px] font-bold mb-2 text-blue-800 uppercase text-center">SharePoint Webhook URL</div>
+            <input type="text" id="webhookUrl" class="w-full p-2 text-xs border rounded bg-white" placeholder="Webhook URL을 입력하세요.">
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-6 flex flex-wrap justify-center gap-4 no-print pb-20">
+            <button onclick="printForm()" class="bg-black text-white px-8 py-2 text-sm font-bold rounded shadow-lg active:scale-95 transition-transform">PDF 인쇄</button>
+            <button onclick="downloadExcel()" class="bg-green-700 text-white px-8 py-2 text-sm font-bold rounded shadow-lg active:scale-95 transition-transform">엑셀 저장</button>
+            <button onclick="sendToSharepoint()" class="bg-blue-700 text-white px-8 py-2 text-sm font-bold rounded shadow-lg active:scale-95 transition-transform">전송</button>
+            <button onclick="openModal()" class="bg-white border border-black px-8 py-2 text-sm font-bold rounded active:scale-95 transition-transform">초기화</button>
+        </div>
+    </div>
+
+    <script>
+        const phaseMap = {
+            "1": "Preflight", "2": "Before start", "3": "Taxi in & out", "4": "Takeoff", "5": "Departure & Climb",
+            "6": "Enroute Cruise", "7": "Descent & Arrival", "8": "Approach", "9": "Landing", "10": "Others"
+        };
+        const phaseNumbers = Object.keys(phaseMap).sort((a,b) => Number(a)-Number(b));
+        
+        const codeMap = {
+            "PRO": "Application of Procedures", "COM": "Communication",
+            "FPA": "Flight Path Management - Automation", "FPM": "Flight Path Management - Manual Control",
+            "LTW": "Leadership & Teamwork", "PSD": "Problem Solving & Decision Making",
+            "SAW": "Situation Awareness", "WLM": "Workload Management",
+            "KNO": "Knowledge", "MNA": "Monitoring & Advice"
+        };
+        const codes = Object.keys(codeMap);
+
+        function renderRows() {
+            const body = document.getElementById('detailBody');
+            body.innerHTML = '';
+            for(let i=0; i<4; i++) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-center h-24">
+                        <div class="no-select-wrapper">
+                            <span class="display-val phase-val">-</span>
+                            <select class="transparent-select row-no" onchange="sync(this)">
+                                <option value="">-</option>
+                                ${phaseNumbers.map(n => `<option value="${n}">${n}. ${phaseMap[n]}</option>`).join('')}
+                            </select>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="no-select-wrapper">
+                            <span class="display-val">-</span>
+                            <select class="transparent-select row-code1" onchange="sync(this)">
+                                <option value="">-</option>
+                                ${codes.map(c => `<option value="${c}">${c} - ${codeMap[c]}</option>`).join('')}
+                            </select>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="no-select-wrapper">
+                            <span class="display-val">-</span>
+                            <select class="transparent-select row-code2" onchange="sync(this)">
+                                <option value="">-</option>
+                                ${codes.map(c => `<option value="${c}">${c} - ${codeMap[c]}</option>`).join('')}
+                            </select>
+                        </div>
+                    </td>
+                    <td class="p-2 relative">
+                        <textarea class="w-full h-full p-1 row-comment font-bold" placeholder="OB를 기록해주세요"></textarea>
+                    </td>
+                `;
+                body.appendChild(tr);
+            }
+        }
+
+        function sync(el) {
+            el.previousElementSibling.textContent = el.value || '-';
+        }
+
+        function getFlattenedData() {
+            const rawData = {
+                "NAME": document.getElementById('traineeName').value,
+                "EMP_NO": document.getElementById('traineeEmpNo').value,
+                "DATE": document.getElementById('trainingDate').value,
+                "POSITION": document.querySelector('input[name="position"]:checked')?.value || "",
+                "DUTY": document.querySelector('input[name="duty"]:checked')?.value || "",
+                "LESSON_NO": document.getElementById('lessonNo').value,
+                "COURSE": document.getElementById('courseType').value,
+                "OVERALL_COMMENT": document.getElementById('overallComment').value,
+                "INST_NAME": document.getElementById('instName').value,
+                "INST_EMP_NO": document.getElementById('instEmpNo').value
+            };
+
+            const rows = document.querySelectorAll('#detailBody tr');
+            rows.forEach((tr, index) => {
+                const idx = index + 1;
+                const phaseVal = tr.querySelector('.row-no').value;
+                const c1Val = tr.querySelector('.row-code1').value;
+                const c2Val = tr.querySelector('.row-code2').value;
+                
+                rawData[`OB${idx}_PHASE`] = phaseMap[phaseVal] || "";
+                rawData[`OB${idx}_COMPETENCY1`] = codeMap[c1Val] || "";
+                rawData[`OB${idx}_COMPETENCY2`] = codeMap[c2Val] || "";
+                rawData[`OB${idx}_COMMENT`] = tr.querySelector('.row-comment').value || "";
+            });
+            return rawData;
+        }
+
+        async function sendToSharepoint() {
+            const url = document.getElementById('webhookUrl').value.trim();
+            if(!url) { showToast("Webhook URL을 입력하세요."); return; }
+            localStorage.setItem('ftd_webhook_url', url);
+            const payload = getFlattenedData();
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if(res.ok) showToast("✅ SharePoint 전송 성공!");
+                else showToast("❌ 전송 실패: " + res.status);
+            } catch(e) { showToast("❌ 오류 발생: " + e.message); }
+        }
+
+        function downloadExcel() {
+            const name = document.getElementById('traineeName').value || "FTD_Record";
+            const data = getFlattenedData();
+            
+            const headers = [
+                "NAME", "EMP_NO", "DATE", "POSITION", "DUTY", "LESSON_NO", "COURSE", "OVERALL_COMMENT", "INST_NAME", "INST_EMP_NO",
+                "OB1_PHASE", "OB1_COMPETENCY1", "OB1_COMPETENCY2", "OB1_COMMENT",
+                "OB2_PHASE", "OB2_COMPETENCY1", "OB2_COMPETENCY2", "OB2_COMMENT",
+                "OB3_PHASE", "OB3_COMPETENCY1", "OB3_COMPETENCY2", "OB3_COMMENT",
+                "OB4_PHASE", "OB4_COMPETENCY1", "OB4_COMPETENCY2", "OB4_COMMENT"
+            ];
+            
+            const values = headers.map(h => data[h] || "");
+            const wsData = [ headers, values ]; 
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            ws['!cols'] = headers.map(h => ({ wch: 15 }));
+            XLSX.utils.book_append_sheet(wb, ws, "FTD_Record");
+            XLSX.writeFile(wb, `FTD_Record_${name}.xlsx`);
+        }
+
+        const canvas = document.getElementById('signature-canvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+
+        function initCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width; canvas.height = rect.height;
+            ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#000';
+        }
+
+        // 마우스 및 터치 이벤트 대응
+        canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); };
+        canvas.onmousemove = (e) => { if(drawing) { ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke(); } };
+        window.onmouseup = () => drawing = false;
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); const t = e.touches[0]; const r = canvas.getBoundingClientRect();
+            drawing = true; ctx.beginPath(); ctx.moveTo(t.clientX - r.left, t.clientY - r.top);
+        }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault(); const t = e.touches[0]; const r = canvas.getBoundingClientRect();
+            if(drawing) { ctx.lineTo(t.clientX - r.left, t.clientY - r.top); ctx.stroke(); }
+        }, {passive: false});
+        canvas.addEventListener('touchend', () => drawing = false);
+
+        function clearSignature() { ctx.clearRect(0,0,canvas.width,canvas.height); }
+
+        function printForm() {
+            document.querySelectorAll('textarea').forEach(ta => {
+                let mirror = ta.nextElementSibling;
+                if (!mirror || !mirror.classList.contains('print-mirror')) {
+                    mirror = document.createElement('div');
+                    mirror.className = 'print-mirror';
+                    ta.parentNode.insertBefore(mirror, ta.nextSibling);
+                }
+                mirror.textContent = ta.value;
+            });
+            window.print();
+        }
+
+        const LS_KEY = 'ftd_record_v4_storage';
+        function saveDraft() {
+            const data = {
+                trainee: document.getElementById('traineeName').value,
+                empNo: document.getElementById('traineeEmpNo').value,
+                date: document.getElementById('trainingDate').value,
+                lesson: document.getElementById('lessonNo').value,
+                course: document.getElementById('courseType').value,
+                overall: document.getElementById('overallComment').value,
+                inst: document.getElementById('instName').value,
+                instNo: document.getElementById('instEmpNo').value,
+                pos: document.querySelector('input[name="position"]:checked')?.value || "",
+                duty: document.querySelector('input[name="duty"]:checked')?.value || "",
+                comments: Array.from(document.querySelectorAll('.row-comment')).map(c => c.value),
+                phases: Array.from(document.querySelectorAll('.row-no')).map(s => s.value),
+                codes1: Array.from(document.querySelectorAll('.row-code1')).map(s => s.value),
+                codes2: Array.from(document.querySelectorAll('.row-code2')).map(s => s.value),
+            };
+            localStorage.setItem(LS_KEY, JSON.stringify(data));
+        }
+
+        function restoreDraft() {
+            const raw = localStorage.getItem(LS_KEY);
+            if(!raw) return;
+            const d = JSON.parse(raw);
+            document.getElementById('traineeName').value = d.trainee || "";
+            document.getElementById('traineeEmpNo').value = d.empNo || "";
+            document.getElementById('trainingDate').value = d.date || "";
+            document.getElementById('lessonNo').value = d.lesson || "";
+            document.getElementById('courseType').value = d.course || "";
+            document.getElementById('overallComment').value = d.overall || "";
+            document.getElementById('instName').value = d.inst || "";
+            document.getElementById('instEmpNo').value = d.instNo || "";
+            
+            if(d.pos) {
+                const rb = document.querySelector(`input[name=\"position\"][value=\"${d.pos}\"]`);
+                if(rb) rb.checked = true;
+            }
+            if(d.duty) {
+                const rb = document.querySelector(`input[name=\"duty\"][value=\"${d.duty}\"]`);
+                if(rb) rb.checked = true;
+            }
+
+            const comments = document.querySelectorAll('.row-comment');
+            const pSels = document.querySelectorAll('.row-no');
+            const c1Sels = document.querySelectorAll('.row-code1');
+            const c2Sels = document.querySelectorAll('.row-code2');
+            if(d.comments) d.comments.forEach((v, i) => { if(comments[i]) comments[i].value = v; });
+            if(d.phases) d.phases.forEach((v, i) => { if(pSels[i]) { pSels[i].value = v; sync(pSels[i]); } });
+            if(d.codes1) d.codes1.forEach((v, i) => { if(c1Sels[i]) { c1Sels[i].value = v; sync(c1Sels[i]); } });
+            if(d.codes2) d.codes2.forEach((v, i) => { if(c2Sels[i]) { c2Sels[i].value = v; sync(c2Sels[i]); } });
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // 모달 제어
+        function openModal() { document.getElementById('custom-modal').classList.add('active'); }
+        function closeModal() { document.getElementById('custom-modal').classList.remove('active'); }
+
+        function confirmReset() {
+            localStorage.removeItem(LS_KEY);
+            
+            // 모든 필드 초기화
+            document.getElementById('traineeName').value = '';
+            document.getElementById('traineeEmpNo').value = '';
+            document.getElementById('trainingDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('lessonNo').value = '';
+            document.getElementById('courseType').value = '';
+            document.getElementById('overallComment').value = '';
+            document.getElementById('instName').value = '';
+            document.getElementById('instEmpNo').value = '';
+            
+            document.querySelectorAll('input[name="position"]').forEach(r => r.checked = false);
+            document.querySelectorAll('input[name="duty"]').forEach(r => r.checked = false);
+            
+            document.querySelectorAll('.row-comment').forEach(el => el.value = '');
+            document.querySelectorAll('.row-no').forEach(el => { el.value = ''; sync(el); });
+            document.querySelectorAll('.row-code1').forEach(el => { el.value = ''; sync(el); });
+            document.querySelectorAll('.row-code2').forEach(el => { el.value = ''; sync(el); });
+            
+            clearSignature();
+            closeModal();
+            showToast("✅ 초기화 완료");
+        }
+
+        window.onload = () => {
+            renderRows(); initCanvas(); restoreDraft();
+            
+            // 실시간 저장 이벤트 리스너
+            document.querySelectorAll('input, textarea, select').forEach(el => {
+                el.addEventListener('input', saveDraft);
+                el.addEventListener('change', saveDraft);
+            });
+
+            if(!document.getElementById('trainingDate').value) {
+                document.getElementById('trainingDate').value = new Date().toISOString().split('T')[0];
+            }
+            
+            const DEFAULT_URL = "https://defaultb1c80a2678f044fd8514c76873b861.81.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4e207bf625db4f3488253078afc85715/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=btV2NN_aYW0FN8xuwap9kYaiVder4B--qbG1Z1Ap4RI";
+            
+            const savedUrl = localStorage.getItem('ftd_webhook_url');
+            document.getElementById('webhookUrl').value = savedUrl || DEFAULT_URL;
+        };
+
+        // 윈도우 리사이즈 대응 (사인 패드 크기 보정)
+        window.onresize = initCanvas;
+    </script>
+</body>
+</html>
